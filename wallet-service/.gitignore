@@ -31,6 +31,5 @@ build/
 
 ### VS Code ###
 .vscode/
-.idea/
 *.env
 application-local.properties
