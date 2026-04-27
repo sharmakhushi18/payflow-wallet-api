@@ -193,10 +193,10 @@ Each microservice owns its schema. User Service cannot directly query Wallet Ser
 - [x] BCrypt password hashing (cost factor 12)
 - [x] User registration and login
 - [x] Environment variables for sensitive config
+- [x]  Notification Service — real Gmail email on transaction
 - [ ] Wallet Service with Redis cache
 - [ ] Transaction Service with Pessimistic Locking
 - [ ] Kafka event publishing
-- [ ] Notification Service with email
 - [ ] Docker + docker-compose
 - [ ] Render deployment
 
