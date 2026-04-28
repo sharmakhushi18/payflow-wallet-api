@@ -2,35 +2,36 @@
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.5-green)
-![MySQL](https://img.shields.io/badge/MySQL-8.0-blue)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-blue)
 ![JWT](https://img.shields.io/badge/JWT-Auth-red)
-![Kafka](https://img.shields.io/badge/Kafka-Events-black)
 ![Redis](https://img.shields.io/badge/Redis-Cache-red)
+![Docker](https://img.shields.io/badge/Docker-Deployed-blue)
 
-Event-driven Digital Wallet API — send money, receive money, every transaction triggers an automatic email notification.
+UPI-style Digital Wallet API — register, get a wallet, send money, every transaction triggers an automatic email notification.
 
 ## 🌐 Live
 | Service | URL |
 |---------|-----|
-| Backend API | Coming soon |
-| Swagger UI | Coming soon |
+| User Service API | https://payflow-wallet-api.onrender.com |
+| Register | POST https://payflow-wallet-api.onrender.com/api/auth/register |
+| Login | POST https://payflow-wallet-api.onrender.com/api/auth/login |
 
 ## 📌 What Is This?
-A Spring Boot REST API that allows users to send and receive money via UPI-style wallet system. When a transaction happens, both sender and receiver get an automatic email — no manual intervention required.
+A Spring Boot microservices REST API that allows users to send and receive money via UPI-style wallet. When a transaction happens, both sender and receiver get an automatic email — no manual intervention required.
 
-Secured with JWT Authentication. Every transaction is protected with pessimistic locking to prevent double debit.
+Secured with JWT Authentication. Every transaction uses @Transactional + Optimistic Locking to prevent double debit.
 
 ## 🚀 What This Project Does
 ```
 User registers → Gets a Wallet with UPI ID (khushi@payflow)
         ↓
-User sends money to another user
+User tops up wallet balance
         ↓
-@Transactional + Pessimistic Lock → no double debit ever
+User sends money to another UPI ID
         ↓
-Kafka event published → Notification Service
+@Transactional + Optimistic Lock → no double debit ever
         ↓
-Sender + Receiver both get email instantly
+Notification Service → Real email to sender + receiver
 ```
 
 ## 🛠️ Tech Stack
@@ -40,46 +41,38 @@ Sender + Receiver both get email instantly
 | Spring Boot 3.4.5 | Backend framework |
 | Spring Security + JWT | Stateless authentication |
 | Spring Data JPA + Hibernate | Database ORM |
-| MySQL | Per-service database |
-| Apache Kafka | Async transaction events |
+| MySQL (local) / PostgreSQL Neon (prod) | Per-service database |
 | Redis | Wallet balance caching |
+| JavaMailSender | Real Gmail email notifications |
 | Docker | Containerization |
+| Render | Cloud deployment |
 
 ## 📐 Architecture
 ```
 Client (Postman / Frontend)
         ↓
-   API Gateway         ← JWT validated on every request
-        ↓
-   User Service        ← Register, Login, JWT Auth
-   Wallet Service      ← Balance, UPI ID, Top-up (Redis cache)
-   Transaction Svc     ← Send/Receive with Pessimistic Lock
-        ↓
-   Apache Kafka        ← ORDER_PLACED event published
-        ↓
-   Notification Svc    ← Email to sender + receiver
+   User Service (8081)         ← Register, Login, JWT Auth
+   Wallet Service (8082)       ← Balance, UPI ID, Top-up, Transfer
+   Transaction Service (8083)  ← State machine, history
+   Notification Service (8084) ← Real Gmail email
 ```
 
 ## 🗄️ Database Schema
 ```
-users
-├── id, name, email (unique)
-├── password (BCrypt hashed)
-└── role (USER / ADMIN)
+payflow_users DB:
+users → id, name, email (unique), password (BCrypt), role
 
-wallets
-├── id, upiId (unique) e.g. khushi@payflow
-├── balance (pessimistic lock on update)
-└── user_id (FK)
+payflow_wallet DB:
+wallets → id, userId, upiId (unique),
+          balance, version (optimistic lock)
 
-transactions
-├── id, amount, type (CREDIT / DEBIT)
-├── status (SUCCESS / FAILED)
-├── senderWalletId (FK), receiverWalletId (FK)
-└── createdAt (auto-set)
+payflow_transactions DB:
+transactions → id, senderUserId, receiverUserId,
+               senderUpiId, receiverUpiId,
+               amount, status, createdAt
 ```
 
-## 🔄 Transaction Flow — State Machine
+## 🔄 Transaction State Machine
 ```
 INITIATED → PROCESSING → SUCCESS
 INITIATED → PROCESSING → FAILED
@@ -99,23 +92,30 @@ Invalid transitions rejected at service layer.
 ### Wallet (🔒 JWT Required)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /api/wallet/balance | Get wallet balance |
-| POST | /api/wallet/topup | Add money to wallet |
-| GET | /api/wallet/upi-id | Get your UPI ID |
+| POST | /api/wallets | Create wallet |
+| GET | /api/wallets | Get balance |
+| POST | /api/wallets/top-up | Add money to wallet |
+| POST | /api/wallets/transfer | Send money to UPI ID |
 
 ### Transactions (🔒 JWT Required)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | /api/transactions/send | Send money to UPI ID |
-| GET | /api/transactions/history | Transaction history |
+| POST | /api/transactions | Create transaction record |
+| GET | /api/transactions/history/{userId} | Transaction history |
+
+### Notifications (Public)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/notifications/send | Send email notification |
+| POST | /api/notifications/transaction | Send transaction email |
 
 All protected endpoints require: `Authorization: Bearer <token>`
 
 ## 📬 Sample Requests
 
-### Register
+### Register (Live)
 ```json
-POST /api/auth/register
+POST https://payflow-wallet-api.onrender.com/api/auth/register
 {
   "name": "Khushi Sharma",
   "email": "khushi@payflow.com",
@@ -131,10 +131,25 @@ Response:
 }
 ```
 
+### Create Wallet
+```json
+POST /api/wallets
+X-User-Id: 1
+X-User-Name: Khushi Sharma
+
+Response:
+{
+  "id": 1,
+  "upiId": "khushish@payflow",
+  "balance": 0,
+  "createdAt": "2026-04-26T06:38:51"
+}
+```
+
 ### Send Money
 ```json
-POST /api/transactions/send
-Authorization: Bearer eyJhbGci...
+POST /api/wallets/transfer
+X-User-Id: 1
 {
   "toUpiId": "rahul@payflow",
   "amount": 500.00
@@ -142,10 +157,8 @@ Authorization: Bearer eyJhbGci...
 
 Response:
 {
-  "transactionId": "TXN123456",
   "status": "SUCCESS",
-  "amount": 500.00,
-  "message": "Money sent successfully"
+  "message": "Transfer successful! Sent Rs.500 to rahul@payflow"
 }
 ```
 
@@ -157,50 +170,58 @@ Response:
 # 1. Clone
 git clone https://github.com/sharmakhushi18/payflow-wallet-api.git
 
-# 2. Create MySQL database
+# 2. Create MySQL databases
 CREATE DATABASE payflow_users;
+CREATE DATABASE payflow_wallet;
+CREATE DATABASE payflow_transactions;
 
 # 3. Set environment variables
 DB_PASSWORD=your_mysql_password
 JWT_SECRET=payflow-super-secret-jwt-key-32chars!!
+MAIL_USERNAME=your_gmail@gmail.com
+MAIL_PASSWORD=your_gmail_app_password
 
-# 4. Run User Service
-cd user-service
-mvn spring-boot:run
-
-# Server: http://localhost:8081
+# 4. Run all services
+cd user-service && mvn spring-boot:run         # port 8081
+cd wallet-service && mvn spring-boot:run       # port 8082
+cd transaction-service && mvn spring-boot:run  # port 8083
+cd notification-service && mvn spring-boot:run # port 8084
 ```
 
 ## 💡 Key Design Decisions
 
-**Why @Transactional + Pessimistic Locking?**
-Two users sending from the same wallet simultaneously would both see sufficient balance and both succeed — causing negative balance. Pessimistic lock ensures only one transaction proceeds at a time. DB unique constraints are the final safety net.
+**Why @Transactional?**
+Debit and credit must succeed or fail together. Partial success — sender debited but receiver not credited — is never acceptable in fintech. @Transactional ensures atomicity.
 
-**Why Kafka for notifications?**
-Transaction and Notification are completely decoupled. If email fails, the transaction still succeeds. Kafka guarantees the notification will be delivered eventually — no data loss.
+**Why Optimistic Locking (@Version)?**
+Two users sending from same wallet simultaneously would both see sufficient balance and both succeed — causing negative balance. @Version detects concurrent conflicts and fails the second transaction.
 
-**Why Redis for wallet balance?**
-Wallet balance is read on every transaction check. Redis cache reduces repeated DB reads. Cache is invalidated on every successful transaction using @CacheEvict.
+**Why Redis?**
+Wallet balance is read on every transaction check. Redis in-memory cache reduces repeated DB reads. @CacheEvict invalidates cache on every successful transfer.
 
 **Why JWT stateless auth?**
-No server-side sessions. Any service instance can verify the token without hitting the DB — essential for horizontal scaling in microservices.
+No server-side sessions. Any service instance can verify the token without hitting DB — essential for horizontal scaling in microservices.
 
 **Why database-per-service?**
-Each microservice owns its schema. User Service cannot directly query Wallet Service DB. This ensures loose coupling and independent deployability.
+Each microservice owns its schema — loose coupling. User Service cannot directly query Wallet DB. Independent deployability.
 
 ## ✅ Features Completed
 - [x] JWT Authentication + Spring Security
 - [x] BCrypt password hashing (cost factor 12)
 - [x] User registration and login
 - [x] Environment variables for sensitive config
-- [x]  Notification Service — real Gmail email on transaction
-- [ ] Wallet Service with Redis cache
-- [ ] Transaction Service with Pessimistic Locking
-- [ ] Kafka event publishing
-- [ ] Docker + docker-compose
-- [ ] Render deployment
+- [x] Wallet Service — UPI ID generation, balance, top-up, transfer
+- [x] Optimistic locking on wallet — prevents double debit
+- [x] Transaction Service — state machine INITIATED→PROCESSING→SUCCESS
+- [x] Transaction history API
+- [x] Notification Service — real Gmail email on transaction
+- [x] Docker + Dockerfile for User Service
+- [x] Deployed on Render with PostgreSQL Neon — Live URL available
+- [ ] Kafka — async notification events
+- [ ] Docker Compose — all services together
 
 ## 🔮 Planned
+- Kafka — async notification events
 - WebSocket — real-time balance update
 - Rate limiting — Redis-based request throttling
 - Pagination — transaction history
@@ -208,8 +229,8 @@ Each microservice owns its schema. User Service cannot directly query Wallet Ser
 ## 👩‍💻 Author
 **Khushi Sharma** — Java Backend Developer
 
-Spring Boot · MySQL · Kafka · Redis · Microservices
+Spring Boot · PostgreSQL · Redis · Microservices · JWT · Docker
 
 Final Year ECE @ LNCT Bhopal
 
-[GitHub](https://github.com/sharmakhushi18) · [LinkedIn](https://linkedin.com/in/khushi-sharma)
+[GitHub](https://github.com/sharmakhushi18) · [LinkedIn](https://www.linkedin.com/in/khushi-sharma-523153259/)
