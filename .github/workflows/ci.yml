@@ -1,0 +1,40 @@
+name: Java CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Build User Service
+      run: |
+        cd user-service
+        ./mvnw clean package -DskipTests
+
+    - name: Build Wallet Service
+      run: |
+        cd wallet-service
+        ./mvnw clean package -DskipTests
+
+    - name: Build Transaction Service
+      run: |
+        cd transaction-service
+        ./mvnw clean package -DskipTests
+
+    - name: Build Notification Service
+      run: |
+        cd notification-service
+        ./mvnw clean package -DskipTests
