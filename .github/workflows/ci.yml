@@ -22,19 +22,23 @@ jobs:
     - name: Build User Service
       run: |
         cd user-service
+        chmod +x mvnw
         ./mvnw clean package -DskipTests
 
     - name: Build Wallet Service
       run: |
         cd wallet-service
+        chmod +x mvnw
         ./mvnw clean package -DskipTests
 
     - name: Build Transaction Service
       run: |
         cd transaction-service
+        chmod +x mvnw
         ./mvnw clean package -DskipTests
 
     - name: Build Notification Service
       run: |
         cd notification-service
+        chmod +x mvnw
         ./mvnw clean package -DskipTests
