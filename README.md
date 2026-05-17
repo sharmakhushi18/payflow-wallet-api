@@ -1,280 +1,200 @@
-# 💸 PayFlow — Digital Wallet API
+# 💳 PayFlow — Digital Wallet API
 
-![Java](https://img.shields.io/badge/Java-17-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4.5-green)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Neon-blue)
-![JWT](https://img.shields.io/badge/JWT-Auth-red)
-![Redis](https://img.shields.io/badge/Redis-Cache-red)
-![Docker](https://img.shields.io/badge/Docker-Deployed-blue)
+A backend REST API simulating core digital wallet operations — built with Java, Spring Boot, and PostgreSQL.  
+Designed with **payment-grade reliability**: ACID transactions, concurrency control, JWT security, and edge case handling.
 
-UPI-style Digital Wallet API — register, get a wallet, send money, every transaction triggers an automatic email notification to both sender and receiver.
-
-## 🌐 Live
-| Service | URL |
-|---------|-----|
-| User Service API | https://payflow-wallet-api.onrender.com |
-| Register | POST https://payflow-wallet-api.onrender.com/api/auth/register |
-| Login | POST https://payflow-wallet-api.onrender.com/api/auth/login |
-
-> ⚠️ Hosted on Render free tier — first request may take 30–50s to cold start.
+🔗 **API Docs (Swagger):** _Add your deployed Swagger URL here_  
+💻 **GitHub:** [github.com/sharmakhushi18/payflow-wallet-api](https://github.com/sharmakhushi18/payflow-wallet-api)
 
 ---
 
-## 📌 What Is This?
+## What It Does
 
-A Spring Boot microservices REST API that simulates a UPI-style payment system. Users register, get a wallet with a unique UPI ID, and transfer money peer-to-peer. Every transaction atomically debits the sender and credits the receiver — with real email notifications sent to both parties automatically.
+PayFlow handles the core lifecycle of a digital wallet:
 
-Core engineering focus: **financial data integrity under concurrency** — the hardest problem in fintech backends.
-
----
-
-## 🚀 How It Works
-
-```
-User registers → Gets a Wallet with UPI ID (khushi@payflow)
-        ↓
-User tops up wallet balance
-        ↓
-User sends money → toUpiId + amount
-        ↓
-@Transactional block → debit + credit atomically
-        ↓
-@Version optimistic lock → concurrent requests? second one fails cleanly
-        ↓
-Notification Service → real Gmail email to sender + receiver
-```
+| Operation | Description |
+|---|---|
+| Register / Login | User auth with JWT token issuance |
+| Create Wallet | Each user gets one wallet with starting balance |
+| Deposit Funds | Add money to your wallet |
+| Transfer Funds | Send money to another user's wallet |
+| Transaction History | View all credits and debits with timestamps |
+| Balance Check | Real-time wallet balance |
 
 ---
 
-## 🛠️ Tech Stack
+## The Engineering Problems It Solves
 
-| Technology | Usage |
-|------------|-------|
-| Java 17 | Core language |
-| Spring Boot 3.4.5 | Backend framework |
-| Spring Security + JWT | Stateless authentication |
-| Spring Data JPA + Hibernate | ORM |
-| MySQL (local) / PostgreSQL Neon (prod) | Per-service databases |
-| Redis | Wallet balance caching |
-| JavaMailSender | Real Gmail email notifications |
-| Docker | Containerization |
-| Render | Cloud deployment |
+### 1. Concurrent Transfer Problem
+> User A and User B both send ₹500 from the same wallet simultaneously.  
+> Without locking — both reads see ₹1000, both deduct ₹500, final balance = ₹500 (wrong).  
+> **PayFlow uses pessimistic locking** — only one transaction proceeds at a time. Balance is always correct.
 
----
+### 2. Atomicity Problem
+> Transfer = debit sender + credit receiver.  
+> If credit fails after debit — money disappears.  
+> **PayFlow wraps both in `@Transactional`** — either both succeed or both roll back. No partial state.
 
-## 📐 Architecture
+### 3. Insufficient Balance
+> System validates balance before any debit operation.  
+> Throws a clean, structured error — never processes invalid transfers.
 
-```
-Client (Postman / Frontend)
-        ↓
-   User Service        :8081   ← Register, Login, JWT Auth
-   Wallet Service      :8082   ← Balance, UPI ID, Top-up, Transfer
-   Transaction Service :8083   ← State machine, history
-   Notification Service:8084   ← Internal only — Gmail email
-```
-
-> Each service owns its own database — no cross-service DB queries. Loose coupling by design.
+### 4. Duplicate Transaction Prevention
+> Idempotency checks prevent the same transfer from being processed twice under network retries.
 
 ---
 
-## 🗄️ Database Schema
+## Tech Stack
 
-```
-payflow_users DB:
-  users → id, name, email (unique), password (BCrypt), role
-
-payflow_wallet DB:
-  wallets → id, userId, upiId (unique),
-            balance, version (optimistic lock key)
-
-payflow_transactions DB:
-  transactions → id, senderUserId, receiverUserId,
-                 senderUpiId, receiverUpiId,
-                 amount, status, createdAt
-```
+| Layer | Technology |
+|---|---|
+| Language | Java 17 |
+| Framework | Spring Boot 3 |
+| Security | Spring Security + JWT |
+| ORM | JPA / Hibernate |
+| Database | PostgreSQL |
+| Containerisation | Docker |
+| API Testing | Postman / Swagger UI |
+| Build Tool | Maven |
 
 ---
 
-## 🔄 Transaction State Machine
+## Architecture
 
 ```
-INITIATED → PROCESSING → SUCCESS
-INITIATED → PROCESSING → FAILED
-
-SUCCESS → terminal (irreversible)
-FAILED  → terminal (irreversible)
+src/
+├── controller/        # REST endpoints (WalletController, TransactionController, AuthController)
+├── service/           # Business logic (WalletService, TransactionService)
+├── repository/        # JPA repositories
+├── model/             # Entities: User, Wallet, Transaction
+├── dto/               # Request / Response objects
+├── security/          # JWT filter, token provider
+└── exception/         # Global exception handler
 ```
 
-Invalid transitions are rejected at the service layer before any DB write.
+**Design pattern:** Layered architecture (Controller → Service → Repository)  
+Each layer has a single responsibility — easy to test, easy to extend.
 
 ---
 
-## 📡 API Endpoints
+## API Endpoints
 
-### Authentication (Public)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/auth/register | Register new user |
-| POST | /api/auth/login | Login, returns JWT token |
+### Auth
+```
+POST /api/auth/register     → Register new user
+POST /api/auth/login        → Login, returns JWT token
+```
 
-### Wallet (🔒 JWT Required)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/wallets | Create wallet |
-| GET | /api/wallets | Get balance |
-| POST | /api/wallets/top-up | Add funds to wallet |
-| POST | /api/wallets/transfer | Send money to UPI ID |
+### Wallet
+```
+GET  /api/wallet/balance            → Check current balance
+POST /api/wallet/deposit            → Add funds
+POST /api/wallet/transfer           → Transfer to another user
+GET  /api/wallet/transactions       → Full transaction history
+```
 
-### Transactions (🔒 JWT Required)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/transactions | Create transaction record |
-| GET | /api/transactions/history/{userId} | Transaction history |
-
-### Notifications (🔒 Internal Service Only)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/notifications/send | Trigger email — internal use |
-| POST | /api/notifications/transaction | Transaction email — internal use |
-
-> All protected endpoints require: `Authorization: Bearer <token>`  
-> Notification endpoints are internal — called by Wallet Service post-transfer, not exposed to clients. Production hardening: service mesh / API gateway to restrict inter-service traffic.
+> All wallet endpoints require `Authorization: Bearer <token>` header.
 
 ---
 
-## 📬 Sample Requests
+## How To Run Locally
 
-### Register (Live)
-```json
-POST https://payflow-wallet-api.onrender.com/api/auth/register
+### Prerequisites
+- Java 17+
+- PostgreSQL running locally
+- Maven
 
-{
-  "name": "Khushi Sharma",
-  "email": "khushi@payflow.com",
-  "password": "password123"
-}
-
-Response:
-{
-  "token": "eyJhbGci...",
-  "tokenType": "Bearer",
-  "name": "Khushi Sharma",
-  "role": "USER"
-}
-```
-
-### Create Wallet
-```json
-POST /api/wallets
-Authorization: Bearer <token>
-
-Response:
-{
-  "id": 1,
-  "upiId": "khushish@payflow",
-  "balance": 0,
-  "createdAt": "2026-04-26T06:38:51"
-}
-```
-
-### Send Money
-```json
-POST /api/wallets/transfer
-Authorization: Bearer <token>
-
-{
-  "toUpiId": "rahul@payflow",
-  "amount": 500.00
-}
-
-Response:
-{
-  "status": "SUCCESS",
-  "message": "Transfer successful! Sent Rs.500 to rahul@payflow"
-}
-```
-
-> userId is extracted from the JWT token server-side — never trusted from request input.
-
----
-
-## ⚙️ How to Run Locally
-
-**Prerequisites:** Java 17+, MySQL 8.0, Maven, Redis
+### Steps
 
 ```bash
-# 1. Clone
+# 1. Clone the repo
 git clone https://github.com/sharmakhushi18/payflow-wallet-api.git
+cd payflow-wallet-api
 
-# 2. Create MySQL databases
-CREATE DATABASE payflow_users;
-CREATE DATABASE payflow_wallet;
-CREATE DATABASE payflow_transactions;
+# 2. Set up PostgreSQL database
+createdb payflow_db
 
-# 3. Set environment variables
-DB_PASSWORD=your_mysql_password
-JWT_SECRET=payflow-super-secret-jwt-key-32chars!!
-MAIL_USERNAME=your_gmail@gmail.com
-MAIL_PASSWORD=your_gmail_app_password
+# 3. Configure application.properties
+# Edit src/main/resources/application.properties:
+# spring.datasource.url=jdbc:postgresql://localhost:5432/payflow_db
+# spring.datasource.username=your_username
+# spring.datasource.password=your_password
 
-# 4. Run all services
-cd user-service        && mvn spring-boot:run   # :8081
-cd wallet-service      && mvn spring-boot:run   # :8082
-cd transaction-service && mvn spring-boot:run   # :8083
-cd notification-service && mvn spring-boot:run  # :8084
+# 4. Run the application
+mvn spring-boot:run
+```
+
+App runs at: `http://localhost:8080`  
+Swagger UI: `http://localhost:8080/swagger-ui/index.html`
+
+### Run with Docker
+
+```bash
+docker build -t payflow-api .
+docker run -p 8080:8080 payflow-api
 ```
 
 ---
 
-## 💡 Key Design Decisions
+## Sample Request — Transfer Funds
 
-**Why @Transactional?**  
-Debit and credit must succeed or fail together. Partial success — sender debited, receiver not credited — is never acceptable in fintech. `@Transactional` guarantees atomicity with automatic rollback on any failure.
+```http
+POST /api/wallet/transfer
+Authorization: Bearer <your_jwt_token>
+Content-Type: application/json
 
-**Why Optimistic Locking (@Version)?**  
-Two concurrent transfers from the same wallet would both read sufficient balance and both succeed — causing negative balance. `@Version` stamps each wallet row; the second concurrent write detects a stale version and fails cleanly with a conflict error instead of silently corrupting data.
+{
+  "receiverEmail": "user@example.com",
+  "amount": 500.00
+}
+```
 
-**Why Redis?**  
-Wallet balance is read on every transaction check. Redis in-memory cache reduces repeated DB reads under load. `@CacheEvict` invalidates the cache on every successful transfer — no stale balance reads.
+**Success Response:**
+```json
+{
+  "status": "SUCCESS",
+  "message": "Transfer completed",
+  "newBalance": 1500.00,
+  "transactionId": "TXN-20260517-001"
+}
+```
 
-**Why JWT stateless auth?**  
-No server-side sessions. Any service instance validates the token independently without a DB call — essential for horizontal scaling in a microservices architecture.
-
-**Why database-per-service?**  
-Each microservice owns its schema. User Service cannot query Wallet DB directly. Services communicate via API, not shared tables — enabling independent deployability and failure isolation.
-
----
-
-## ✅ Features
-
-- [x] JWT Authentication + Spring Security
-- [x] BCrypt password hashing
-- [x] User registration and login
-- [x] Environment variables for all sensitive config
-- [x] Wallet Service — UPI ID generation, balance, top-up, transfer
-- [x] Optimistic locking — prevents double debit under concurrency
-- [x] Transaction Service — state machine (INITIATED → PROCESSING → SUCCESS/FAILED)
-- [x] Transaction history API
-- [x] Notification Service — real Gmail email on every transaction
-- [x] Docker containerization
-- [x] Deployed on Render with PostgreSQL Neon
-
----
-
-## 🔮 Roadmap
-
-- Kafka — async notification events (decouple notification from transfer flow)
-- Docker Compose — single command local setup for all 4 services
-- WebSocket — real-time balance updates
-- Redis-based rate limiting — prevent transfer spam
-- Pagination — transaction history with cursor-based pagination
+**Failure Response (Insufficient Balance):**
+```json
+{
+  "status": "FAILED",
+  "error": "Insufficient balance",
+  "availableBalance": 200.00
+}
+```
 
 ---
 
-## 👩‍💻 Author
+## Key Engineering Decisions
+
+**Why pessimistic locking over optimistic?**  
+In payment systems, conflicts are frequent and costly. Pessimistic locking guarantees correctness at the cost of some throughput — acceptable for a wallet API where money correctness > speed.
+
+**Why JWT over session-based auth?**  
+Stateless authentication scales horizontally. No session store needed — fits microservices architecture.
+
+**Why `@Transactional` on transfer service?**  
+A transfer is a two-step atomic operation. Without `@Transactional`, a failure between debit and credit leaves the system in an inconsistent state.
+
+---
+
+## What I Learned Building This
+
+- How payment systems think about consistency vs availability tradeoffs
+- Why database-level locking matters more than application-level checks
+- How to structure a Spring Boot project for real-world extensibility
+- How JWT authentication integrates across a secured REST API
+
+---
+
+## Author
 
 **Khushi Sharma** — Java Backend Developer  
-Spring Boot · PostgreSQL · Redis · Microservices · JWT · Docker  
-Final Year ECE @ LNCT Bhopal
-
-[GitHub](https://github.com/sharmakhushi18) · [LinkedIn](https://www.linkedin.com/in/khushi-sharma-523153259/)
+📧 khushis50956@gmail.com  
+🔗 [linkedin.com/in/khushissharma](https://linkedin.com/in/khushissharma)  
+💻 [github.com/sharmakhushi18](https://github.com/sharmakhushi18)
