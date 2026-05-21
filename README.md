@@ -194,7 +194,7 @@ A transfer is a two-step atomic operation. Without `@Transactional`, a failure b
 
 ## Author
 
-**Khushi Sharma** — Java Backend Developer  
+**Khushi Sharma** — Java Backend Developer
 📧 khushis50956@gmail.com  
 🔗 [linkedin.com/in/khushissharma](https://linkedin.com/in/khushissharma)  
 💻 [github.com/sharmakhushi18](https://github.com/sharmakhushi18)
