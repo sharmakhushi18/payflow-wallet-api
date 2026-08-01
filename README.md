@@ -3,8 +3,9 @@
 A backend REST API simulating core digital wallet operations — built with Java, Spring Boot, and PostgreSQL.  
 Designed with **payment-grade reliability**: ACID transactions, concurrency control, JWT security, and edge case handling.
 
-💻 **GitHub:** [github.com/sharmakhushi18/payflow-wallet-api](https://github.com/sharmakhushi18/payflow-wallet-api)
+💻🔗 API Docs (Swagger): https://payflow-wallet-api.onrender.com/swagger-ui/index.html
 
+💻 GitHub: https://github.com/sharmakhushi18/payflow-wallet-api
 ---
 
 ## What It Does
